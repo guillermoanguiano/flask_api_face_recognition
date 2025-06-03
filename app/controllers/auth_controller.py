@@ -1,18 +1,76 @@
-from flask import request, jsonify
-from app.services.face_recognition_service import FaceRecognitionService
+from flask import jsonify, request
+
 from app.services.client_service import ClientService
+from app.services.face_recognition_service import FaceRecognitionService
 
 
 class AuthController:
     @staticmethod
+    def create_client_with_face():
+        try:
+            data = request.get_json()
+
+            if not data:
+                return jsonify({"success": False, "message": "No data provided"}), 400
+
+            name = data.get("name")
+            email = data.get("email")
+            expiration_date = data.get("expiration_date")
+            image_data = data.get("image")
+
+            if not all([name, email, expiration_date, image_data]):
+                return jsonify(
+                    {
+                        "success": False,
+                        "message": "All fields are required: name, email, expiration_date, and image",
+                    }
+                ), 400
+
+            existing_client = ClientService.get_client_by_email(email)
+            if existing_client:
+                return jsonify(
+                    {
+                        "success": False,
+                        "message": "A client with this email already exists",
+                    }
+                ), 400
+
+            face_encoding, error = FaceRecognitionService.extract_face_encoding(
+                image_data
+            )
+
+            if error:
+                return jsonify(
+                    {"success": False, "message": f"Face registration failed: {error}"}
+                ), 400
+
+            client, db_error = ClientService.create_client(
+                name=name,
+                email=email,
+                expiration_date=expiration_date,
+                face_encoding=face_encoding,
+            )
+
+            if db_error:
+                return jsonify(
+                    {"success": False, "message": f"Database error: {db_error}"}
+                ), 500
+
+            return jsonify(
+                {
+                    "success": True,
+                    "message": f"Client {client.name} created successfully with facial recognition",
+                    "client": client.to_dict(),
+                }
+            ), 201
+
+        except Exception as e:
+            return jsonify(
+                {"success": False, "message": f"Internal server error: {str(e)}"}
+            ), 500
+
+    @staticmethod
     def register_face():
-        """
-        Register client's face
-        Expected: {
-            "client_id": int,
-            "image": "data:image/jpeg;base64,..."
-        }
-        """
         try:
             data = request.get_json()
 
@@ -62,12 +120,6 @@ class AuthController:
 
     @staticmethod
     def verify_access():
-        """
-        Verify access through facial recognition
-        Expected: {
-            "image": "data:image/jpeg;base64,..."
-        }
-        """
         try:
             data = request.get_json()
 
@@ -79,7 +131,7 @@ class AuthController:
             if not image_data:
                 return jsonify({"success": False, "message": "Image is required"}), 400
 
-            clients_with_faces = ClientService.get_clients_with_face_encoding()
+            clients_with_faces = ClientService.get_all_clients()
 
             if not clients_with_faces:
                 return jsonify(

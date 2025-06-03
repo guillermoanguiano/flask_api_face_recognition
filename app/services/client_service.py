@@ -1,6 +1,7 @@
+from datetime import date
+
 from app import db
 from app.models.client import Client
-from datetime import date
 
 
 class ClientService:
@@ -17,9 +18,19 @@ class ClientService:
         return Client.query.get(client_id)
 
     @staticmethod
+    def get_client_by_email(email):
+        """Get client by email"""
+        return Client.query.filter_by(email=email).first()
+
+    @staticmethod
     def create_client(name, email, expiration_date, face_encoding=None):
         """Create a new client"""
         try:
+            # Verificar que el email no esté ya registrado
+            existing_client = ClientService.get_client_by_email(email)
+            if existing_client:
+                return None, "A client with this email already exists"
+
             client = Client(
                 name=name,
                 email=email,
@@ -49,11 +60,9 @@ class ClientService:
             return None, str(e)
 
     @staticmethod
-    def get_clients_with_face_encoding():
-        """Get clients that have face encoding registered"""
-        return Client.query.filter(
-            Client.face_encoding.isnot(None), Client.active is True
-        ).all()
+    def get_all_clients():
+        """Get all clients"""
+        return Client.query.all()
 
     @staticmethod
     def update_client(client_id, **kwargs):
@@ -70,6 +79,21 @@ class ClientService:
             from datetime import datetime
 
             client.updated_at = datetime.utcnow()
+            db.session.commit()
+            return client, None
+        except Exception as e:
+            db.session.rollback()
+            return None, str(e)
+
+    @staticmethod
+    def delete_client(client_id):
+        """Delete a client (soft delete by setting active=False)"""
+        try:
+            client = Client.query.get(client_id)
+            if not client:
+                return None, "Client not found"
+
+            client.active = False
             db.session.commit()
             return client, None
         except Exception as e:
